@@ -1100,3 +1100,379 @@ Trước khi viết hoặc sửa code:
 Nếu một yêu cầu mới xung đột với luật trong tài liệu:
 → DỪNG và báo mâu thuẫn.
 → Không tự ý sửa luật để làm cho code chạy được.
+
+---
+
+# PHẦN E — CÁC QUYẾT ĐỊNH KỸ THUẬT ĐÃ KHÓA BỔ SUNG
+
+Phần này khóa các điểm mà Codex xác định còn mơ hồ. Codex không được tự ý thay đổi các quyết định dưới đây.
+
+## E1. Vị trí BOT THƯ KÝ
+
+BOT THƯ KÝ nằm trong:
+
+```text
+bot_main/secretary.py
+```
+
+Không tạo thư mục thứ 5 cho BOT THƯ KÝ.
+
+## E2. Cách chạy 200 BOT trên VPS 2GB
+
+Dùng một `AgentEngine`/scheduler chung quản lý 200 agent/strategy instance.
+
+Không tạo 200 process Python độc lập.
+
+Cho phép chạy theo batch, queue, time-slice hoặc concurrency giới hạn.
+
+Không giữ toàn bộ dữ liệu của 200 BOT và toàn bộ kho mẫu trong RAM.
+
+## E3. Dữ liệu lịch sử khởi tạo kho mẫu
+
+Dùng dữ liệu lịch sử tối thiểu **24 tháng** khi Binance có đủ dữ liệu.
+
+Mục tiêu là bao phủ nhiều cấu trúc:
+- tăng;
+- giảm;
+- đi ngang;
+- biến động cao/thấp;
+- đảo chiều;
+- breakout/fake breakout.
+
+Nếu một coin không có đủ 24 tháng, dùng phần dữ liệu hợp lệ dài nhất có thể và lưu `data_coverage_start/end`.
+
+Không bịa dữ liệu để đủ 24 tháng.
+
+Ưu tiên lưu feature/snapshot đã chuẩn hóa thay vì lưu toàn bộ nến thô trong từng mẫu.
+
+## E4. CÔNG THỨC SIMILARITY CẤP CODE
+
+Similarity giữ đúng:
+
+```text
+30% — SO GIÁ TRỊ
+30% — SO HƯỚNG
+40% — SO ĐỘ DỐC + CẤU TRÚC
+```
+
+Tính riêng cho 5m và 15m.
+
+### E4.1. Chuẩn hóa giá trị
+
+- MACD DIF/DEA/Histogram: chuẩn hóa theo ATR cùng timeframe.
+- RSI6/RSI12: chuẩn hóa về [0,1].
+- Volume: dùng Volume Ratio = Volume / Volume trung bình.
+- OI: dùng OI Change %.
+- ATR: dùng ATR%.
+- EMA: dùng khoảng cách EMA theo ATR hoặc % giá.
+- Price Action: dùng tỷ lệ thân/râu/biên độ, không dùng giá tuyệt đối.
+
+### E4.2. Lớp 1 — So giá trị
+
+Với mỗi feature đã chuẩn hóa:
+
+```text
+feature_similarity = max(0, 1 - normalized_absolute_difference)
+```
+
+Điểm lớp 1 là trung bình có trọng số của các feature hợp lệ.
+
+### E4.3. Lớp 2 — So hướng
+
+Với từng đường/chỉ báo:
+- cùng hướng tăng → 1.00;
+- cùng hướng giảm → 1.00;
+- một bên đi ngang → 0.50;
+- hướng ngược nhau → 0.00.
+
+MACD:
+- hướng chính theo DIF;
+- kiểm tra thêm trạng thái âm/0/dương.
+
+RSI:
+- xét RSI6;
+- xét RSI12;
+- nếu hai đường ngược hướng thì phạt mạnh.
+
+### E4.4. Lớp 3 — So độ dốc + cấu trúc
+
+Dùng chuỗi **5 điểm đóng đã xác nhận gần nhất**.
+
+Tính:
+- độ dốc chuẩn hóa;
+- hướng thay đổi liên tiếp;
+- mức mở rộng/thu hẹp;
+- trạng thái giao cắt;
+- cấu trúc tăng/giảm/đi ngang.
+
+Kết hợp:
+- độ tương đồng độ dốc;
+- cosine similarity của vector thay đổi;
+- tỷ lệ dấu hướng trùng nhau.
+
+Không dùng dữ liệu nến chưa đóng cho mẫu LIVE.
+
+### E4.5. Công thức cuối
+
+```text
+SIMILARITY =
+0.30 * VALUE_SCORE
++
+0.30 * DIRECTION_SCORE
++
+0.40 * SLOPE_STRUCTURE_SCORE
+```
+
+Chuyển về thang 0–100.
+
+Cổng cứng:
+```text
+5m >= 90
+15m >= 90
+```
+
+Không dùng điểm 1h để bù cho 5m/15m.
+
+## E5. MARKET REGIME
+
+Market Regime có 2 trục:
+
+### Trend State
+- `UPTREND`
+- `DOWNTREND`
+- `RANGE`
+- `TRANSITION`
+
+### Volatility State
+- `LOW_VOL`
+- `NORMAL_VOL`
+- `HIGH_VOL`
+
+### Trend State 15m
+
+`UPTREND` khi đồng thời:
+- EMA20 > EMA50 > EMA200;
+- EMA20 dốc dương;
+- cấu trúc gần nhất có HH/HL.
+
+`DOWNTREND` khi đồng thời:
+- EMA20 < EMA50 < EMA200;
+- EMA20 dốc âm;
+- cấu trúc gần nhất có LH/LL.
+
+`RANGE` khi:
+- EMA20 và EMA50 gần nhau theo ATR;
+- độ dốc EMA20 nhỏ;
+- không có HH/HL hoặc LH/LL rõ.
+
+Các trạng thái còn lại:
+→ `TRANSITION`.
+
+### Volatility State
+
+Dùng ATR% và percentile của chính coin/timeframe:
+- dưới P20 → LOW_VOL;
+- P20 đến P80 → NORMAL_VOL;
+- trên P80 → HIGH_VOL.
+
+Market Regime phải được lưu trong mẫu và dùng khi xếp hạng BOT/đối chiếu mẫu.
+
+## E6. LOSS ÁP ĐẢO
+
+Sau khi có >=100 mẫu tương đồng hợp lệ:
+
+```text
+LOSS_RATIO = LOSS / (WIN + LOSS)
+```
+
+Nếu:
+
+```text
+LOSS_RATIO >= 60%
+```
+
+→ ĐỨNG XEM.
+
+Ngoài ra, nếu:
+
+```text
+Similarity_LOSS >= Similarity_WIN
+```
+
+→ ĐỨNG XEM.
+
+Không dùng ranking 200 BOT để vượt cổng này.
+
+## E7. SQLITE / INDEX / QUERY
+
+SQLite là database phiên bản đầu.
+
+Index tối thiểu:
+- `(symbol, direction, timeframe)`
+- `(result, timeframe)`
+- `(market_regime, timeframe)`
+- `(created_at)`
+- `(pattern_group_id)`
+- `(bot_id, created_at)`
+
+Similarity phải lọc tập ứng viên bằng query trước rồi mới tính score.
+
+Không được full-table similarity cho toàn bộ kho ở mỗi tín hiệu.
+
+Bật:
+- WAL;
+- transaction;
+- backup;
+- integrity check;
+- recovery sau restart.
+
+## E8. PAPER → LIVE
+
+PAPER là mặc định.
+
+Dùng:
+
+```env
+TRADING_MODE=PAPER
+```
+
+LIVE chỉ khi người vận hành đổi thủ công thành:
+
+```env
+TRADING_MODE=LIVE
+```
+
+Không cho Telegram message thông thường tự đổi PAPER → LIVE.
+
+Khi LIVE vẫn bắt buộc:
+- Risk Engine;
+- SL bảo hiểm;
+- Daily Loss Limit;
+- mọi invariant khác.
+
+## E9. LỊCH SỬ BOT BỊ ĐÀO THẢI
+
+Mỗi BOT có:
+- `bot_id` ổn định;
+- `version`;
+- `status`;
+- `parent_bot_id`;
+- lịch sử hiệu suất;
+- lịch sử tham số.
+
+Khi đào thải:
+- trạng thái = `RETIRED`;
+- không xóa lịch sử.
+
+Slot hoạt động được dùng để tạo BOT mới.
+
+Lịch sử BOT bị đào thải là metadata/hiệu suất, không tự động tính vào quota 15GB của kho pattern nếu không phải pattern data.
+
+## E10. QUYỀN QUYẾT ĐỊNH KỸ THUẬT CỦA CODEX
+
+Nếu chi tiết kỹ thuật chưa được nêu nhưng không thay đổi nghiệp vụ:
+- Codex được chọn giải pháp kỹ thuật hợp lý;
+- phải ghi lại lựa chọn;
+- phải có test.
+
+Nếu chi tiết đó thay đổi:
+- chiến lược;
+- ngưỡng;
+- điều kiện giao dịch;
+- rủi ro;
+- hành vi nghiệp vụ;
+
+→ DỪNG và hỏi người vận hành.
+
+## E11. TÀI LIỆU NGUỒN DUY NHẤT
+
+`MASTER_SPEC.md` là tài liệu nguồn duy nhất.
+
+Không cần `SPEC.md` hoặc `INVARIANTS.md` riêng.
+
+## E12. CHUẨN HÓA TRỌNG SỐ NỘI BỘ VÀ NGƯỠNG REGIME
+
+Để Codex không phải tự suy diễn khi hiện thực hóa công thức, dùng các trọng số/threshold mặc định đã khóa sau.
+
+### E12.1. Trọng số feature bên trong từng lớp Similarity
+
+#### Lớp 1 — VALUE_SCORE
+- MACD (DIF/DEA/Histogram + khoảng cách): 35%
+- RSI6/RSI12: 25%
+- Volume Ratio: 15%
+- EMA structure: 10%
+- OI Change: 5%
+- ATR%: 5%
+- Price Action: 5%
+
+#### Lớp 2 — DIRECTION_SCORE
+- MACD direction/state: 35%
+- RSI6/RSI12 direction: 30%
+- Volume direction: 15%
+- EMA direction: 10%
+- OI direction: 5%
+- Price Action direction: 5%
+
+#### Lớp 3 — SLOPE_STRUCTURE_SCORE
+- MACD slope/structure: 35%
+- RSI6/RSI12 slope/structure: 30%
+- Volume slope/structure: 10%
+- EMA slope/structure: 10%
+- OI slope/structure: 5%
+- Price Action structure: 10%
+
+Các trọng số trên chỉ triển khai trong phạm vi công thức Similarity đã chốt; không được tự ý thay đổi khi chưa có yêu cầu của người vận hành.
+
+### E12.2. Ngưỡng Trend State 15m
+
+Dùng 5 nến 15m đã đóng gần nhất để tính slope EMA20:
+
+```text
+normalized_ema20_slope = (EMA20_now - EMA20_5bars_ago) / ATR15m_now
+```
+
+`UPTREND` khi đồng thời:
+- EMA20 > EMA50 > EMA200;
+- normalized_ema20_slope >= +0.20;
+- trong 5 nến 15m gần nhất có cấu trúc HH/HL hợp lệ.
+
+`DOWNTREND` khi đồng thời:
+- EMA20 < EMA50 < EMA200;
+- normalized_ema20_slope <= -0.20;
+- trong 5 nến 15m gần nhất có cấu trúc LH/LL hợp lệ.
+
+`RANGE` khi đồng thời:
+- abs(EMA20 - EMA50) / ATR15m <= 0.50;
+- abs(normalized_ema20_slope) < 0.10;
+- không có HH/HL hoặc LH/LL hợp lệ trong 5 nến 15m gần nhất.
+
+Các trường hợp còn lại = `TRANSITION`.
+
+### E12.3. Volatility State
+
+Dùng ATR% của chính coin/timeframe trên cửa sổ 30 ngày gần nhất:
+- < P20 = LOW_VOL
+- P20 đến P80 = NORMAL_VOL
+- > P80 = HIGH_VOL
+
+Nếu chưa đủ dữ liệu 30 ngày để tính percentile:
+→ dùng trạng thái `NORMAL_VOL` tạm thời và đánh dấu `regime_confidence=LOW`; không được bịa percentile.
+
+### E12.4. Cấu trúc HH/HL và LH/LL
+
+Một swing được dùng cho Market Regime phải là swing đã được xác nhận theo quy tắc Swing Low/Swing High của hệ thống, không dùng nến đang chạy.
+
+Trong 5 nến 15m gần nhất:
+- HH/HL hợp lệ = chuỗi cấu trúc cho UPTREND.
+- LH/LL hợp lệ = chuỗi cấu trúc cho DOWNTREND.
+
+Không được dùng dữ liệu tương lai trong LIVE để xác nhận regime.
+
+### E12.5. Khả năng thiếu dữ liệu
+
+Nếu thiếu dữ liệu bắt buộc của 5m hoặc 15m:
+→ không tính Similarity hoàn chỉnh;
+→ BOT THƯ KÝ phải trả ĐỨNG XEM.
+
+Nếu chỉ thiếu dữ liệu bối cảnh 1h:
+→ vẫn có thể xử lý 5m/15m theo luật, nhưng phải đánh dấu `context_1h_missing=true` trong log.
